@@ -34,6 +34,47 @@ This repository should not include your local runtime data:
 
 These files live under `data/` and `.env.local`, both of which are ignored.
 
+## Recommended Docker Install
+
+Docker is the recommended way to run this project. It avoids local Node.js,
+Chromium, and Playwright version issues.
+
+One-line pull on Windows:
+
+```powershell
+git clone https://github.com/xuanfengdabiti/sub2api-auto-relogin.git; cd sub2api-auto-relogin; copy .env.local.example .env.local; notepad .env.local; docker compose up -d --build
+```
+
+Or step by step:
+
+```powershell
+git clone https://github.com/xuanfengdabiti/sub2api-auto-relogin.git
+cd sub2api-auto-relogin
+copy .env.local.example .env.local
+notepad .env.local
+docker compose up -d --build
+```
+
+Then open:
+
+```text
+http://localhost:8083
+```
+
+If your SUB2API service runs on the host machine, use this value in
+`.env.local` when running through Docker:
+
+```env
+SUB2API_URL=http://host.docker.internal:8082/admin/accounts
+```
+
+To update later:
+
+```powershell
+git pull
+docker compose up -d --build
+```
+
 ## Quick Start
 
 Requirements:
@@ -59,7 +100,7 @@ SUB2API_GROUP_NAMES=your-group-name
 SUB2API_PROXY_NAME=your-proxy-name
 ```
 
-Start it:
+Start it with Docker:
 
 ```powershell
 docker compose up -d --build
