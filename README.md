@@ -39,13 +39,7 @@ These files live under `data/` and `.env.local`, both of which are ignored.
 Docker is the recommended way to run this project. It avoids local Node.js,
 Chromium, and Playwright version issues.
 
-One-line pull on Windows:
-
-```powershell
-git clone https://github.com/xuanfengdabiti/sub2api-auto-relogin.git; cd sub2api-auto-relogin; copy .env.local.example .env.local; notepad .env.local; docker compose up -d --build
-```
-
-Or step by step:
+Run these commands one by one on Windows:
 
 ```powershell
 git clone https://github.com/xuanfengdabiti/sub2api-auto-relogin.git
