@@ -1,0 +1,8 @@
+node_modules
+.env
+.env.*
+!.env.local.example
+data
+.git
+npm-debug.log*
+remake.md

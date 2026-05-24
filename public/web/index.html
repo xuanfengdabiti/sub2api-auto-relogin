@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sub2API Auto Relogin</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <section class="topbar">
+        <div>
+          <h1>Sub2API Auto Relogin</h1>
+          <p id="subtitle">Mailbox and relogin monitor</p>
+        </div>
+        <div class="top-actions">
+          <button id="refreshBtn" class="primary">刷新</button>
+          <button id="sub2apiCheckBtn">检测 Sub2API</button>
+        </div>
+      </section>
+
+      <section class="stats" aria-label="stats">
+        <article>
+          <span>邮箱总数</span>
+          <strong id="statTotal">0</strong>
+        </article>
+        <article>
+          <span>正常</span>
+          <strong id="statOk">0</strong>
+        </article>
+        <article>
+          <span>异常</span>
+          <strong id="statError">0</strong>
+        </article>
+        <article>
+          <span>SUB2API 失败</span>
+          <strong id="statFail">0</strong>
+        </article>
+      </section>
+
+      <section class="grid">
+        <aside class="panel import-panel">
+          <div class="panel-head">
+            <h2>导入邮箱</h2>
+            <span>邮箱--密码 / Token 自动识别</span>
+          </div>
+          <textarea id="importText" spellcheck="false" placeholder="IMAP: user@example.com----password&#10;Token: user@example.com----password----refreshToken----clientId&#10;GuJumpgate: user@example.com----password----clientId----refreshToken"></textarea>
+          <div class="button-row">
+            <button id="importBtn" class="primary">导入/更新</button>
+            <button id="clearImportBtn">清空</button>
+          </div>
+          <p id="importResult" class="hint"></p>
+
+          <div class="panel-head compact">
+            <h2>批量操作</h2>
+            <span id="selectedCount">未选择</span>
+          </div>
+          <div class="button-grid">
+            <button id="checkSelectedBtn">检测选中</button>
+            <button id="checkAllBtn">检测全部</button>
+            <button id="deleteSelectedBtn" class="danger">删除选中</button>
+            <button id="deleteAllBtn" class="danger soft">删除全部</button>
+          </div>
+          <label class="checkline">
+            <input id="deleteSub2api" type="checkbox">
+            <span>删除时同时删除 SUB2API 账号</span>
+          </label>
+        </aside>
+
+        <section class="panel table-panel">
+          <div class="panel-head table-tools">
+            <div>
+              <h2>邮箱列表</h2>
+              <span id="lastChecked">等待刷新</span>
+            </div>
+            <input id="searchInput" type="search" placeholder="搜索邮箱或状态">
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th class="select-col"><input id="selectAll" type="checkbox" aria-label="选择全部"></th>
+                  <th>邮箱</th>
+                  <th>状态</th>
+                  <th>最近授权</th>
+                  <th>错误</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="accountsBody">
+                <tr>
+                  <td colspan="6" class="empty">正在加载...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="panel log-panel">
+        <div class="panel-head">
+          <div>
+            <h2>日志</h2>
+            <span>检测、重登、清理和页面操作</span>
+          </div>
+          <button id="copyLogsBtn">复制日志</button>
+        </div>
+        <pre id="logsBox">正在加载日志...</pre>
+      </section>
+    </main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="/app.js"></script>
+  </body>
+</html>

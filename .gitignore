@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.local.example
+node_modules/
+npm-debug.log*
+
+# Runtime data. This folder may contain mailbox credentials, ChatGPT sessions,
+# browser cookies, debug screenshots, and SUB2API state.
+data/*
+!data/.gitkeep
+
+# Local archives or generated conversion output.
+*.local.json
+*.tmp.*
+remake.md

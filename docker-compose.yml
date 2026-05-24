@@ -1,0 +1,20 @@
+services:
+  sub2api-auto-relogin:
+    build: .
+    container_name: sub2api-auto-relogin
+    restart: unless-stopped
+    env_file:
+      - .env.local
+    environment:
+      SUB2API_URL: ${SUB2API_URL:-http://host.docker.internal:8082/admin/accounts}
+      CHROME_EXECUTABLE_PATH: /usr/bin/chromium
+      WEB_PORT: ${WEB_PORT:-8083}
+      TZ: ${TZ:-Asia/Shanghai}
+      CHATGPT_RELOGIN_HEADLESS: "1"
+      NODE_OPTIONS: "--dns-result-order=ipv4first"
+    ports:
+      - "${WEB_PORT:-8083}:${WEB_PORT:-8083}"
+    volumes:
+      - ./data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

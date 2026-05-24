@@ -1,0 +1,33 @@
+{
+  "scripts": {
+    "app": "node bin/auto-relogin.js",
+    "status": "node bin/auto-relogin.js status",
+    "run": "node bin/auto-relogin.js run",
+    "run:once": "node bin/auto-relogin.js run --once",
+    "web": "node bin/auto-relogin.js web",
+    "mail:import": "node bin/auto-relogin.js mail:import",
+    "mail:list": "node bin/auto-relogin.js mail:list",
+    "mail:check": "node bin/auto-relogin.js mail:check",
+    "mail:check-all": "node bin/auto-relogin.js mail:check-all",
+    "mail:latest-code": "node bin/auto-relogin.js mail:latest-code",
+    "mail:demo": "node examples/mail-demo.js",
+    "session:convert": "node bin/auto-relogin.js session:convert",
+    "session:import": "node bin/auto-relogin.js session:import",
+    "sub2api:import-json": "node bin/auto-relogin.js sub2api:import-json",
+    "sub2api:cleanup-duplicates": "node bin/auto-relogin.js sub2api:cleanup-duplicates",
+    "cleanup:dead-mailbox": "node bin/auto-relogin.js cleanup:dead-mailbox",
+    "relogin:capture": "node bin/auto-relogin.js relogin:capture",
+    "relogin:import": "node bin/auto-relogin.js relogin:import",
+    "monitor:sub2api-fail": "node bin/auto-relogin.js run",
+    "monitor:sub2api-fail:once": "node bin/auto-relogin.js sub2api:check",
+    "monitor:sub2api-fail:start": "powershell -ExecutionPolicy Bypass -File scripts/start-sub2api-fail-monitor.ps1",
+    "monitor:sub2api-fail:stop": "powershell -ExecutionPolicy Bypass -File scripts/stop-sub2api-fail-monitor.ps1"
+  },
+  "dependencies": {
+    "classic-level": "^3.0.0",
+    "imapflow": "^1.3.3",
+    "mailparser": "^3.9.8",
+    "playwright-core": "^1.60.0",
+    "undici": "^8.3.0"
+  }
+}
