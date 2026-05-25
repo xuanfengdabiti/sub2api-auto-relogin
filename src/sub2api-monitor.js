@@ -10,6 +10,7 @@ const STATE_PATH = path.join(DATA_DIR, 'sub2api-fail-monitor-state.json');
 const LOG_PATH = path.join(DATA_DIR, 'sub2api-fail-monitor.log');
 const LOCK_PATH = path.join(DATA_DIR, 'auto-relogin.lock');
 const LEGACY_LOCK_PATH = path.join(DATA_DIR, 'sub2api-fail-monitor.lock');
+const CONTROL_PATH = path.join(DATA_DIR, 'auto-relogin-control.json');
 const DEFAULT_TIME_ZONE = 'Asia/Shanghai';
 
 dns.setDefaultResultOrder('ipv4first');
@@ -416,6 +417,40 @@ async function writeState(state) {
   await fs.writeFile(STATE_PATH, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
 }
 
+function normalizeControl(control = {}) {
+  return {
+    autoCheckEnabled: control.autoCheckEnabled !== false,
+    updatedAt: String(control.updatedAt || ''),
+    updatedBy: String(control.updatedBy || ''),
+  };
+}
+
+async function readControl() {
+  try {
+    return normalizeControl(JSON.parse(await fs.readFile(CONTROL_PATH, 'utf8')));
+  } catch (error) {
+    if (error.code === 'ENOENT') return normalizeControl();
+    throw error;
+  }
+}
+
+async function writeControl(control) {
+  await fs.mkdir(DATA_DIR, { recursive: true });
+  const normalized = normalizeControl(control);
+  await fs.writeFile(CONTROL_PATH, `${JSON.stringify(normalized, null, 2)}\n`, 'utf8');
+  return normalized;
+}
+
+async function setAutoCheckEnabled(enabled, options = {}) {
+  const next = await writeControl({
+    autoCheckEnabled: Boolean(enabled),
+    updatedAt: nowBeijingIso(),
+    updatedBy: options.updatedBy || options.by || 'api',
+  });
+  await appendEventLog(`AUTO-CHECK ${next.autoCheckEnabled ? 'resumed' : 'paused'} by ${next.updatedBy}`);
+  return next;
+}
+
 async function appendLog(line) {
   await fs.mkdir(DATA_DIR, { recursive: true });
   await fs.appendFile(LOG_PATH, `${line}\n`, 'utf8');
@@ -584,6 +619,7 @@ async function readLock(lockPath = LOCK_PATH) {
 }
 
 module.exports = {
+  CONTROL_PATH,
   DATA_DIR,
   ENV_PATH,
   LEGACY_LOCK_PATH,
@@ -611,13 +647,16 @@ module.exports = {
   login,
   formatBeijingIso,
   nowBeijingIso,
+  readControl,
   readLock,
   readState,
   releaseLockSync,
   requestJson,
   resolveGroupIds,
   resolveProxy,
+  setAutoCheckEnabled,
   stopLockedProcess,
+  writeControl,
   accountMatchesGroups,
   extractAccountGroupNames,
 };

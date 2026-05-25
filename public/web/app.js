@@ -3,6 +3,7 @@ const state = {
   selected: new Set(),
   logs: [],
   busy: false,
+  autoCheckEnabled: true,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -21,6 +22,8 @@ const els = {
   searchInput: $('#searchInput'),
   selectAll: $('#selectAll'),
   logsBox: $('#logsBox'),
+  autoCheckStatus: $('#autoCheckStatus'),
+  autoCheckToggleBtn: $('#autoCheckToggleBtn'),
   toast: $('#toast'),
 };
 
@@ -133,10 +136,22 @@ function renderAccounts() {
   updateSelectionLabel();
 }
 
+function applyAutoCheckStatus(sub2api) {
+  const enabled = sub2api.autoCheckEnabled !== false;
+  state.autoCheckEnabled = enabled;
+  els.autoCheckStatus.textContent = enabled ? '自动检测：运行中' : '自动检测：已暂停';
+  els.autoCheckStatus.classList.toggle('paused', !enabled);
+  els.autoCheckToggleBtn.textContent = enabled ? '暂停检测' : '开启检测';
+  els.autoCheckToggleBtn.dataset.enabled = String(enabled);
+  els.autoCheckToggleBtn.classList.toggle('paused', !enabled);
+  els.autoCheckToggleBtn.setAttribute('aria-pressed', String(!enabled));
+}
+
 function applyStatus(payload) {
   state.accounts = payload.mail.accounts || [];
   const ids = new Set(state.accounts.map((account) => account.id));
   state.selected = new Set([...state.selected].filter((id) => ids.has(id)));
+  applyAutoCheckStatus(payload.sub2api || {});
 
   els.statTotal.textContent = payload.mail.count || 0;
   els.statOk.textContent = payload.mail.authorized || 0;
@@ -243,11 +258,25 @@ async function copyLatestCode(account) {
   });
 }
 
+async function toggleAutoCheck() {
+  const nextEnabled = !state.autoCheckEnabled;
+  await runAction(nextEnabled ? '正在开启自动检测' : '正在暂停自动检测', async () => {
+    const result = await api('/api/sub2api/auto-check', {
+      method: 'POST',
+      body: { enabled: nextEnabled },
+    });
+    applyAutoCheckStatus(result);
+    showToast(nextEnabled ? '自动检测已开启' : '自动检测已暂停');
+  });
+}
+
 function bindEvents() {
   $('#refreshBtn').addEventListener('click', () => runAction('正在刷新', async () => {
     await Promise.all([refreshStatus(), refreshLogs()]);
     showToast('已刷新');
   }));
+
+  els.autoCheckToggleBtn.addEventListener('click', toggleAutoCheck);
 
   $('#sub2apiCheckBtn').addEventListener('click', () => runAction('正在检测 Sub2API', async () => {
     await api('/api/sub2api/check', { method: 'POST' });

@@ -53,6 +53,7 @@ function usage() {
     '  node bin/auto-relogin.js start',
     '  node bin/auto-relogin.js stop',
     '  node bin/auto-relogin.js sub2api:check [--json]',
+    '  node bin/auto-relogin.js sub2api:auto-check enable|disable|status',
     '  node bin/auto-relogin.js sub2api:cleanup-duplicates --apply [--json]',
     '  node bin/auto-relogin.js cleanup:dead-mailbox --account email --apply [--json]',
     '  node bin/auto-relogin.js session:convert --from path [--out path] [--json]',
@@ -331,6 +332,18 @@ async function runLoop(options = {}) {
 
   const runAndReport = async () => {
     try {
+      const control = await monitor.readControl();
+      if (control.autoCheckEnabled === false) {
+        const checkedAt = monitor.nowBeijingIso();
+        await monitor.appendLog(`[${checkedAt}] AUTO-CHECK paused; skipping scheduled check.`);
+        if (!options.json) process.stdout.write(`[${checkedAt}] AUTO-CHECK paused; skipping scheduled check.\n`);
+        return {
+          checkedAt,
+          ok: true,
+          skipped: true,
+          reason: 'auto-check paused',
+        };
+      }
       const ready = await waitForSub2apiReady(config, {
         attempts: options.once ? 1 : undefined,
       });
@@ -482,6 +495,20 @@ async function main() {
   if (command === 'sub2api:check') {
     const summary = await monitor.checkOnce();
     printMonitorSummary(summary, Boolean(args.json));
+    return;
+  }
+
+  if (command === 'sub2api:auto-check') {
+    if (args.status || args._[1] === 'status') {
+      printJson({ ok: true, ...(await monitor.readControl()) });
+      return;
+    }
+    const value = args.enabled || args._[1];
+    if (!/^(1|true|yes|on|enable|enabled|start|resume|0|false|no|off|disable|disabled|stop|pause)$/i.test(String(value || ''))) {
+      throw new Error('Usage: node bin/auto-relogin.js sub2api:auto-check enable|disable|status');
+    }
+    const enabled = /^(1|true|yes|on|enable|enabled|start|resume)$/i.test(String(value));
+    printJson({ ok: true, ...(await monitor.setAutoCheckEnabled(enabled, { updatedBy: 'cli' })) });
     return;
   }
 

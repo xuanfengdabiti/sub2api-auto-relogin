@@ -116,6 +116,7 @@ async function tailFile(filePath, maxLines = 200) {
 async function getStatusPayload() {
   const config = await monitor.loadConfig().catch((error) => ({ error: error.message }));
   const state = await monitor.readState().catch(() => ({ failAccounts: {} }));
+  const control = await monitor.readControl().catch(() => ({ autoCheckEnabled: true }));
   const lock = await monitor.readLock(monitor.LOCK_PATH);
   const accounts = accountStore.loadAccounts().map(webAccount);
   return {
@@ -127,6 +128,9 @@ async function getStatusPayload() {
     sub2api: {
       groupNames: config.groupNames || [],
       intervalMinutes: config.intervalMinutes || 0,
+      autoCheckEnabled: control.autoCheckEnabled !== false,
+      controlUpdatedAt: control.updatedAt || '',
+      controlUpdatedBy: control.updatedBy || '',
       latestFailCount: state.latestFailCount || 0,
       lastCheckedAt: state.lastCheckedAt || '',
       currentFailures: Object.values(state.failAccounts || {}),
@@ -279,6 +283,19 @@ async function handleApi(req, res, url) {
   if (req.method === 'POST' && url.pathname === '/api/sub2api/check') {
     const summary = await monitor.checkOnce();
     sendJson(res, 200, { ok: true, summary });
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/sub2api/auto-check') {
+    const body = await parseJsonBody(req);
+    if (typeof body.enabled !== 'boolean') throw new Error('Missing boolean enabled.');
+    const control = await monitor.setAutoCheckEnabled(body.enabled, { updatedBy: 'web' });
+    sendJson(res, 200, {
+      ok: true,
+      autoCheckEnabled: control.autoCheckEnabled,
+      updatedAt: control.updatedAt,
+      updatedBy: control.updatedBy,
+    });
     return;
   }
 

@@ -74,6 +74,12 @@ button.danger.soft {
   background: var(--bad-soft);
 }
 
+button.toggle-check.paused {
+  color: var(--accent-ink);
+  background: var(--warn);
+  border-color: var(--warn);
+}
+
 .shell {
   width: min(1440px, calc(100vw - 32px));
   margin: 0 auto;
@@ -129,6 +135,31 @@ h2 {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.top-actions {
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.check-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  border: 1px solid #b8d6c2;
+  border-radius: 999px;
+  background: #e6f2ea;
+  color: var(--good);
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.check-pill.paused {
+  border-color: #e8d0ab;
+  background: #f8eddf;
+  color: var(--warn);
 }
 
 .stats {
