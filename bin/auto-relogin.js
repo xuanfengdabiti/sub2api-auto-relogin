@@ -6,6 +6,7 @@ const {
   importFromGuJumpgateStorage,
   importFromGuJumpgateStorageMerge,
   importFromHotmailAccountLineFile,
+  findAccount,
   loadAccounts,
   parseHotmailAccountLine,
   summarizeAccount,
@@ -258,6 +259,29 @@ async function reloginFailedAccounts(accounts, options = {}) {
     const key = email.toLowerCase();
     if (!email || seen.has(key)) continue;
     seen.add(key);
+    if (!findAccount(email)) {
+      const cleanup = await monitor.deleteSub2apiAccountsByEmail(email, {
+        onlyError: true,
+      }).catch((error) => ({
+        count: 0,
+        deleted: [],
+        error: error.message || String(error),
+      }));
+      results.push({
+        ok: false,
+        account,
+        email,
+        skipped: true,
+        error: `Hotmail account not found locally: ${email}`,
+        cleanup: {
+          mailDeleted: 0,
+          sub2apiDeleted: cleanup.count || 0,
+          sub2apiError: cleanup.error || '',
+        },
+      });
+      await monitor.appendEventLog(`AUTO-RELOGIN CLEANUP ${email}: missing local mailbox, sub2api=${cleanup.count || 0}${cleanup.error ? ` sub2apiError=${cleanup.error}` : ''}`);
+      continue;
+    }
     try {
       const result = await browserRelogin.reloginImport(email, {
         debug: false,

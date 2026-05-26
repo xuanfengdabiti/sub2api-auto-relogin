@@ -189,15 +189,27 @@ function resolveReloginOptions(body = {}) {
   const mode = String(body.proxyMode || 'none').trim();
   const options = {
     headless: true,
+    totalTimeoutMs: Number(body.timeoutMs || process.env.WEB_RELOGIN_TIMEOUT_MS || 180000),
+    postCodeMaxAttempts: Number(body.postCodeMaxAttempts || 1),
+    emailStepMaxAttempts: Number(body.emailStepMaxAttempts || 2),
+    emailStepTimeoutMs: Number(body.emailStepTimeoutMs || 15000),
+    codeWaitMs: Number(body.codeWaitMs || 10000),
+    navigationTimeoutMs: Number(body.navigationTimeoutMs || 30000),
+    networkIdleTimeoutMs: Number(body.networkIdleTimeoutMs || 30000),
+    sessionFetchAttempts: Number(body.sessionFetchAttempts || 2),
+    sessionFetchTimeoutMs: Number(body.sessionFetchTimeoutMs || 30000),
+    sessionBodyTimeoutMs: Number(body.sessionBodyTimeoutMs || 10000),
   };
 
   if (mode === 'none') {
     options.proxy = false;
+    options.sub2apiProxyName = '';
     return { options, proxyMode: mode, proxyLabel: 'direct' };
   }
 
   if (mode === 'sub2api') {
     options.useSub2apiProxy = true;
+    options.sub2apiProxyName = undefined;
     return { options, proxyMode: mode, proxyLabel: 'sub2api-config' };
   }
 
@@ -207,10 +219,188 @@ function resolveReloginOptions(body = {}) {
     options.proxyServer = server;
     options.proxyUsername = String(body.proxyUsername || '').trim();
     options.proxyPassword = String(body.proxyPassword || '');
+    options.sub2apiProxyName = '';
     return { options, proxyMode: mode, proxyLabel: server.replace(/\/\/([^:@/]+):([^@/]+)@/u, '//***:***@') };
   }
 
   throw new Error('Invalid proxy mode.');
+}
+
+function normalizeProxyProtocol(value) {
+  const raw = String(value || '').replace(/:$/, '').trim().toLowerCase();
+  if (!raw) return 'http';
+  if (['http', 'https', 'socks4', 'socks5'].includes(raw)) return raw;
+  throw new Error(`Unsupported proxy protocol: ${raw}`);
+}
+
+function parseProxyServer(rawServer, username = '', password = '') {
+  const input = String(rawServer || '').trim();
+  if (!input) throw new Error('Missing custom proxy server.');
+  const withProtocol = /^[a-z][a-z0-9+.-]*:\/\//i.test(input) ? input : `http://${input}`;
+  let parsed;
+  try {
+    parsed = new URL(withProtocol);
+  } catch (error) {
+    throw new Error(`Invalid proxy server: ${error.message}`);
+  }
+
+  const protocol = normalizeProxyProtocol(parsed.protocol);
+  const host = String(parsed.hostname || '').trim();
+  const port = Number(parsed.port || (protocol === 'https' ? 443 : 80));
+  if (!host) throw new Error('Proxy server is missing host.');
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    throw new Error('Proxy server port is invalid.');
+  }
+
+  return {
+    protocol,
+    host,
+    port,
+    username: String(username || decodeURIComponent(parsed.username || '')).trim(),
+    password: String(password || decodeURIComponent(parsed.password || '')),
+  };
+}
+
+function proxySignature(proxy) {
+  return [
+    String(proxy.protocol || '').trim().toLowerCase(),
+    String(proxy.host || '').trim().toLowerCase(),
+    String(proxy.port || '').trim(),
+    String(proxy.username || '').trim(),
+  ].join('|');
+}
+
+function buildCustomProxyName(proxy) {
+  const user = proxy.username ? `${proxy.username}@` : '';
+  return `web-${proxy.protocol}-${user}${proxy.host}-${proxy.port}`.replace(/[^a-z0-9@._-]+/gi, '-').slice(0, 80);
+}
+
+function buildProxyPayload(proxy, existing = {}) {
+  return {
+    name: existing.name || buildCustomProxyName(proxy),
+    protocol: proxy.protocol,
+    host: proxy.host,
+    port: proxy.port,
+    username: proxy.username,
+    password: proxy.password,
+    status: 'active',
+  };
+}
+
+function extractOpenAiCallbackCode(value) {
+  const input = String(value || '').trim();
+  if (!input) throw new Error('Missing callback URL or code.');
+  if (!/^https?:\/\//i.test(input)) {
+    return { code: input, state: '' };
+  }
+  const parsed = new URL(input);
+  const code = parsed.searchParams.get('code') || '';
+  const state = parsed.searchParams.get('state') || '';
+  if (!code) throw new Error('Callback URL does not include code.');
+  return { code, state };
+}
+
+function buildOpenAiOAuthCredentials(payload = {}) {
+  const credentials = {};
+  for (const key of [
+    'access_token',
+    'refresh_token',
+    'id_token',
+    'expires_at',
+    'email',
+    'chatgpt_account_id',
+    'chatgpt_user_id',
+    'organization_id',
+    'plan_type',
+    'client_id',
+  ]) {
+    if (payload[key] !== undefined && payload[key] !== null && payload[key] !== '') {
+      credentials[key] = payload[key];
+    }
+  }
+  if (!credentials.access_token) {
+    throw new Error('SUB2API exchange-code did not return access_token.');
+  }
+  return credentials;
+}
+
+function buildOpenAiOAuthExtra(payload = {}) {
+  const extra = {};
+  for (const key of ['email', 'name', 'privacy_mode']) {
+    if (payload[key] !== undefined && payload[key] !== null && payload[key] !== '') {
+      extra[key] = payload[key];
+    }
+  }
+  return Object.keys(extra).length ? extra : {};
+}
+
+async function resolveSub2apiAccountTargets(config, options = {}) {
+  const { origin, token } = await monitor.login(config);
+  const [groupIds, proxy] = await Promise.all([
+    monitor.resolveGroupIds(origin, token, config.groupNames, config.platform),
+    resolveSub2apiProxyForOptions(origin, token, config, options),
+  ]);
+  if (!groupIds.length) throw new Error(`No SUB2API group ids resolved for ${config.groupNames.join(', ')}`);
+  return { origin, token, groupIds, proxy };
+}
+
+async function resolveSub2apiProxyForOptions(origin, token, config, options = {}) {
+  if (options.proxyMode === 'none') return null;
+
+  if (options.proxyMode === 'custom') {
+    const proxy = parseProxyServer(options.proxyServer, options.proxyUsername, options.proxyPassword);
+    const all = await monitor.listAllProxies(origin, token);
+    const signature = proxySignature(proxy);
+    const existing = all.find((item) => proxySignature(item) === signature);
+    if (existing?.id) {
+      const nextProxy = buildProxyPayload(proxy, existing);
+      const needsUpdate = String(existing.status || '').toLowerCase() !== 'active'
+        || String(existing.password || '') !== proxy.password
+        || String(existing.name || '') !== nextProxy.name;
+      if (needsUpdate) {
+        return monitor.updateProxy(origin, token, existing.id, nextProxy);
+      }
+      return existing;
+    }
+    return monitor.createProxy(origin, token, buildProxyPayload(proxy));
+  }
+
+  return monitor.resolveProxy(origin, token, options.sub2apiProxyName !== undefined ? options.sub2apiProxyName : config.proxyName);
+}
+
+function buildSub2apiOpenAiAccount(email, exchange, targets, config) {
+  const account = {
+    name: email,
+    notes: null,
+    platform: 'openai',
+    type: 'oauth',
+    credentials: buildOpenAiOAuthCredentials(exchange),
+    extra: buildOpenAiOAuthExtra(exchange),
+    concurrency: config.concurrency,
+    priority: config.priority,
+    rate_multiplier: config.rateMultiplier,
+    group_ids: targets.groupIds,
+    auto_pause_on_expired: true,
+  };
+  if (targets.proxy?.id) account.proxy_id = Number(targets.proxy.id);
+  return account;
+}
+
+function mergeExistingOpenAiAccountPayload(accountPayload, existing = {}) {
+  if (!existing || typeof existing !== 'object') return accountPayload;
+  const credentials = { ...accountPayload.credentials };
+  if (existing.credentials?.model_mapping && !credentials.model_mapping) {
+    credentials.model_mapping = existing.credentials.model_mapping;
+  }
+  const extra = {
+    ...(existing.extra && typeof existing.extra === 'object' ? existing.extra : {}),
+    ...(accountPayload.extra && typeof accountPayload.extra === 'object' ? accountPayload.extra : {}),
+  };
+  return {
+    ...accountPayload,
+    credentials,
+    extra: Object.keys(extra).length ? extra : accountPayload.extra,
+  };
 }
 
 async function handleApi(req, res, url) {
@@ -303,6 +493,94 @@ async function handleApi(req, res, url) {
     sendJson(res, 200, {
       ok: true,
       deleted: results,
+      accounts: accountStore.loadAccounts().map(webAccount),
+    });
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/sub2api/openai-auth-url') {
+    const body = await parseJsonBody(req);
+    const email = String(body.email || '').trim();
+    if (!email) throw new Error('Missing email.');
+    const config = await monitor.loadConfig();
+    const { options, proxyMode, proxyLabel } = resolveReloginOptions(body);
+    const targets = await resolveSub2apiAccountTargets(config, { ...options, proxyMode });
+    const payload = {};
+    if (targets.proxy?.id) payload.proxy_id = Number(targets.proxy.id);
+    const result = await monitor.generateOpenAiAuthUrl(targets.origin, targets.token, payload);
+    let state = '';
+    try {
+      state = new URL(result.auth_url).searchParams.get('state') || '';
+    } catch {
+      state = '';
+    }
+    await monitor.appendEventLog(`WEB openai oauth URL ${email}: proxy=${proxyLabel}`);
+    sendJson(res, 200, {
+      ok: true,
+      email,
+      proxyMode,
+      proxyLabel,
+      authUrl: result.auth_url || '',
+      sessionId: result.session_id || '',
+      state,
+      target: {
+        groupNames: config.groupNames,
+        groupIds: targets.groupIds,
+        proxyId: targets.proxy?.id ? Number(targets.proxy.id) : null,
+        proxyName: targets.proxy?.name || '',
+      },
+    });
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/sub2api/openai-complete-auth') {
+    const body = await parseJsonBody(req);
+    const email = String(body.email || '').trim();
+    const sessionId = String(body.sessionId || '').trim();
+    const expectedState = String(body.state || '').trim();
+    if (!email) throw new Error('Missing email.');
+    if (!sessionId) throw new Error('Missing session id.');
+    const callback = extractOpenAiCallbackCode(body.callbackUrl || body.code);
+    const state = callback.state || expectedState;
+    if (!state) throw new Error('Missing OAuth state.');
+    if (expectedState && callback.state && expectedState !== callback.state) {
+      throw new Error('OAuth state mismatch. Please generate a new auth link and retry.');
+    }
+
+    const config = await monitor.loadConfig();
+    const { options, proxyMode, proxyLabel } = resolveReloginOptions(body);
+    const targets = await resolveSub2apiAccountTargets(config, { ...options, proxyMode });
+    const exchangePayload = {
+      session_id: sessionId,
+      code: callback.code,
+      state,
+    };
+    if (targets.proxy?.id) exchangePayload.proxy_id = Number(targets.proxy.id);
+    const exchange = await monitor.exchangeOpenAiCode(targets.origin, targets.token, exchangePayload);
+    const existing = await monitor.listAccountsByName(targets.origin, targets.token, config, email);
+    const accountPayload = mergeExistingOpenAiAccountPayload(
+      buildSub2apiOpenAiAccount(email, exchange, targets, config),
+      existing[0],
+    );
+    const response = existing[0]?.id
+      ? await monitor.updateAccount(targets.origin, targets.token, existing[0].id, targets.proxy?.id
+        ? accountPayload
+        : { ...accountPayload, proxy_id: 0 })
+      : await monitor.createAccount(targets.origin, targets.token, accountPayload);
+    await monitor.appendEventLog(`WEB openai oauth OK ${email}: proxy=${proxyLabel} ${existing[0]?.id ? 'updated' : 'created'}`);
+    sendJson(res, 200, {
+      ok: true,
+      email,
+      proxyMode,
+      created: !existing[0]?.id,
+      updated: Boolean(existing[0]?.id),
+      account: response,
+      target: {
+        groupNames: config.groupNames,
+        groupIds: targets.groupIds,
+        proxyId: targets.proxy?.id ? Number(targets.proxy.id) : null,
+        proxyName: targets.proxy?.name || '',
+      },
       accounts: accountStore.loadAccounts().map(webAccount),
     });
     return;

@@ -43,6 +43,25 @@ async function pathExists(filePath) {
   }
 }
 
+function createTimeoutError(message, timeoutMs) {
+  const error = new Error(`${message} timed out after ${Math.round(timeoutMs / 1000)}s.`);
+  error.code = 'CHATGPT_RELOGIN_TIMEOUT';
+  return error;
+}
+
+function withTimeout(promise, timeoutMs, onTimeout, message) {
+  const ms = Number(timeoutMs || 0);
+  if (!Number.isFinite(ms) || ms <= 0) return promise;
+  let timer = null;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(async () => {
+      await Promise.resolve(onTimeout?.()).catch(() => {});
+      reject(createTimeoutError(message, ms));
+    }, ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 async function findChromeExecutable() {
   const candidates = [
     process.env.CHROME_EXECUTABLE_PATH,
@@ -598,12 +617,14 @@ async function submitCode(page, code) {
   ]).catch(() => {});
 }
 
-async function fetchSessionFromPage(page) {
-  const attempts = 5;
+async function fetchSessionFromPage(page, options = {}) {
+  const attempts = Math.max(1, Number(options.sessionFetchAttempts || 5));
+  const timeout = Math.max(1000, Number(options.sessionFetchTimeoutMs || 60000));
+  const bodyTimeout = Math.max(1000, Number(options.sessionBodyTimeoutMs || 30000));
   let lastError = null;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    await page.goto('https://chatgpt.com/api/auth/session', { waitUntil: 'networkidle', timeout: 60000 });
-    const text = await page.locator('body').innerText({ timeout: 30000 });
+    await page.goto('https://chatgpt.com/api/auth/session', { waitUntil: 'networkidle', timeout });
+    const text = await page.locator('body').innerText({ timeout: bodyTimeout });
     let session;
     try {
       session = JSON.parse(text);
@@ -626,9 +647,11 @@ async function reloginAndCaptureSession(email, options = {}) {
   const chromePath = await findChromeExecutable();
   const profileDir = await createProfileDir(email);
   let context;
+  let timedOut = false;
   const headless = Boolean(options.headless);
   const browserProxy = await resolveBrowserProxy(options);
   const postCodeMaxAttempts = Math.max(1, Number(options.postCodeMaxAttempts || process.env.CHATGPT_RELOGIN_POST_CODE_MAX_ATTEMPTS || 3));
+  const totalTimeoutMs = Math.max(0, Number(options.totalTimeoutMs || process.env.CHATGPT_RELOGIN_TOTAL_TIMEOUT_MS || 0));
   const launchArgs = [
     '--disable-blink-features=AutomationControlled',
     '--no-first-run',
@@ -645,7 +668,7 @@ async function reloginAndCaptureSession(email, options = {}) {
       '--disable-background-networking',
     ] : []),
   ];
-  try {
+  const runCapture = async () => {
     context = await chromium.launchPersistentContext(profileDir, {
       executablePath: chromePath,
       headless,
@@ -661,11 +684,11 @@ async function reloginAndCaptureSession(email, options = {}) {
       const attemptStartedAt = Date.now();
       const attemptPrefix = postCodeMaxAttempts > 1 ? `attempt-${attempt}-` : '';
       if (attempt > 1) {
-        await gotoWithRetry(page, 'https://chatgpt.com/auth/login', { waitUntil: 'domcontentloaded' });
+        await gotoWithRetry(page, 'https://chatgpt.com/auth/login', { waitUntil: 'domcontentloaded', timeout: options.navigationTimeoutMs });
         await page.waitForTimeout(1500);
       }
 
-      await gotoWithRetry(page, 'https://chatgpt.com/auth/login', { waitUntil: 'domcontentloaded' });
+      await gotoWithRetry(page, 'https://chatgpt.com/auth/login', { waitUntil: 'domcontentloaded', timeout: options.navigationTimeoutMs });
       const emailSubmit = await submitEmailWithRetries(page, email, {
         debugDir,
         maxAttempts: options.emailStepMaxAttempts,
@@ -703,7 +726,7 @@ async function reloginAndCaptureSession(email, options = {}) {
       }
 
       await submitCode(page, codeResult.code);
-      await page.waitForLoadState('networkidle', { timeout: 60000 }).catch(() => {});
+      await page.waitForLoadState('networkidle', { timeout: Number(options.networkIdleTimeoutMs || 60000) }).catch(() => {});
       await page.waitForTimeout(3000);
       const afterCodeDump = await debugDumpPage(page, `${attemptPrefix}03-after-code-submit`, { debugDir });
       const postCodeAuthError = createPostCodeAuthErrorIfNeeded(afterCodeDump);
@@ -721,7 +744,7 @@ async function reloginAndCaptureSession(email, options = {}) {
       }
 
       try {
-        const session = await fetchSessionFromPage(page);
+        const session = await fetchSessionFromPage(page, options);
         const sessionPath = await sessionImporter.saveCapturedSession(email, session, options);
         return {
           ok: true,
@@ -742,9 +765,16 @@ async function reloginAndCaptureSession(email, options = {}) {
     }
 
     throw lastRetryableError || new Error('ChatGPT login did not complete.');
+  };
+
+  try {
+    return await withTimeout(runCapture(), totalTimeoutMs, async () => {
+      timedOut = true;
+      if (context) await context.close().catch(() => {});
+    }, `ChatGPT relogin for ${email}`);
   } finally {
     if (context) await context.close().catch(() => {});
-    if (options.keepProfile !== true) await removeProfileDir(profileDir);
+    if (options.keepProfile !== true && !timedOut) await removeProfileDir(profileDir);
   }
 }
 
@@ -756,6 +786,7 @@ async function reloginImport(email, options = {}) {
   const importResult = await sessionImporter.importSessionFile(capture.sessionPath, {
     email,
     name: email,
+    sub2apiProxyName: options.sub2apiProxyName,
   });
   return {
     ok: capture.ok && importResult.ok,

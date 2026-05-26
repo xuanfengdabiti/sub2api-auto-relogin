@@ -24,6 +24,8 @@ const els = {
   proxyServer: $('#proxyServer'),
   proxyUsername: $('#proxyUsername'),
   proxyPassword: $('#proxyPassword'),
+  authUrlText: $('#authUrlText'),
+  callbackUrlText: $('#callbackUrlText'),
   reloginResult: $('#reloginResult'),
   searchInput: $('#searchInput'),
   selectAll: $('#selectAll'),
@@ -33,11 +35,39 @@ const els = {
   toast: $('#toast'),
 };
 
+const oauthState = {
+  email: '',
+  sessionId: '',
+  state: '',
+};
+
 function showToast(message) {
   els.toast.textContent = message;
   els.toast.classList.add('show');
   clearTimeout(showToast.timer);
   showToast.timer = setTimeout(() => els.toast.classList.remove('show'), 2800);
+}
+
+async function copyText(text) {
+  const value = String(text || '');
+  if (!value) throw new Error('没有可复制的内容');
+  if (navigator.clipboard?.writeText && window.isSecureContext) {
+    await navigator.clipboard.writeText(value);
+    return true;
+  }
+  const textarea = document.createElement('textarea');
+  textarea.value = value;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  textarea.style.top = '0';
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  const ok = document.execCommand('copy');
+  textarea.remove();
+  if (!ok) throw new Error('浏览器禁止自动复制，请手动复制');
+  return true;
 }
 
 function setBusy(isBusy) {
@@ -259,7 +289,7 @@ async function copyLatestCode(account) {
       body: { email: account.email, kind: 'login' },
     });
     if (!result.code) throw new Error(result.error || '没有找到验证码');
-    await navigator.clipboard.writeText(result.code);
+    await copyText(result.code);
     showToast(`验证码已复制：${result.code}`);
   });
 }
@@ -276,32 +306,70 @@ function reloginProxyPayload() {
   return payload;
 }
 
-async function reloginEmails(emails) {
-  if (!emails.length) {
-    showToast('没有可重登的邮箱');
-    return;
+function singleSelectedEmail() {
+  const emails = selectedEmails();
+  if (emails.length !== 1) {
+    throw new Error('请选择 1 个邮箱来授权');
   }
+  return emails[0];
+}
+
+async function generateOpenAiAuthUrl() {
+  let email;
   let payload;
   try {
+    email = singleSelectedEmail();
     payload = reloginProxyPayload();
   } catch (error) {
     showToast(error.message);
     return;
   }
-  const proxyLabel = els.reloginProxyMode.options[els.reloginProxyMode.selectedIndex]?.textContent || '';
-  const message = `确认重登 ${emails.length} 个邮箱并导入 SUB2API？\n登录代理：${proxyLabel}`;
-  if (!window.confirm(message)) return;
-  await runAction('正在重登并导入', async () => {
-    const result = await api('/api/relogin/import', {
+  await runAction('正在生成授权链接', async () => {
+    const result = await api('/api/sub2api/openai-auth-url', {
       method: 'POST',
       body: {
-        emails,
+        email,
         ...payload,
       },
     });
-    const failed = result.results.filter((item) => !item.ok);
-    els.reloginResult.textContent = `完成 ${result.successCount}/${result.reloginCount} 个${failed.length ? `，失败：${failed.map((item) => item.email).join(', ')}` : ''}`;
-    showToast(failed.length ? `重登完成，有 ${failed.length} 个失败` : '重登并导入完成');
+    oauthState.email = result.email;
+    oauthState.sessionId = result.sessionId;
+    oauthState.state = result.state;
+    els.authUrlText.value = result.authUrl;
+    els.callbackUrlText.value = '';
+    els.reloginResult.textContent = `账号名：${result.email} / OpenAI OAuth / 分组：${(result.target.groupNames || []).join(',') || 'gptplus'} / 代理：${result.target.proxyName || '无代理'}`;
+    await copyText(result.authUrl).catch(() => {});
+    showToast('授权链接已生成，已尝试复制');
+  });
+}
+
+async function completeOpenAiAuth() {
+  let payload;
+  try {
+    if (!oauthState.email || !oauthState.sessionId) throw new Error('请先生成授权链接');
+    payload = reloginProxyPayload();
+  } catch (error) {
+    showToast(error.message);
+    return;
+  }
+  const callbackUrl = els.callbackUrlText.value.trim();
+  if (!callbackUrl) {
+    showToast('先粘贴 http://localhost... 回调地址');
+    return;
+  }
+  await runAction('正在完成授权', async () => {
+    const result = await api('/api/sub2api/openai-complete-auth', {
+      method: 'POST',
+      body: {
+        email: oauthState.email,
+        sessionId: oauthState.sessionId,
+        state: oauthState.state,
+        callbackUrl,
+        ...payload,
+      },
+    });
+    els.reloginResult.textContent = `${result.email} 已${result.created ? '创建' : '更新'}到 SUB2API，分组 ${(result.target.groupNames || []).join(',') || 'gptplus'}，代理 ${result.target.proxyName || '无代理'}`;
+    showToast('授权完成，已写入 SUB2API');
   });
 }
 
@@ -340,15 +408,28 @@ function bindEvents() {
   $('#checkAllBtn').addEventListener('click', () => checkEmails(state.accounts.map((account) => account.email)));
   $('#deleteSelectedBtn').addEventListener('click', () => deleteEmails(selectedEmails()));
   $('#deleteAllBtn').addEventListener('click', () => deleteEmails(state.accounts.map((account) => account.email)));
-  $('#reloginSelectedBtn').addEventListener('click', () => reloginEmails(selectedEmails()));
+  $('#reloginSelectedBtn').addEventListener('click', generateOpenAiAuthUrl);
+  $('#copyAuthUrlBtn').addEventListener('click', async () => {
+    try {
+      await copyText(els.authUrlText.value);
+      showToast('授权链接已复制');
+    } catch (error) {
+      showToast(error.message);
+    }
+  });
+  $('#completeAuthBtn').addEventListener('click', completeOpenAiAuth);
 
   els.reloginProxyMode.addEventListener('change', () => {
     els.customProxyFields.classList.toggle('hidden', els.reloginProxyMode.value !== 'custom');
   });
 
   $('#copyLogsBtn').addEventListener('click', async () => {
-    await navigator.clipboard.writeText(state.logs.join('\n'));
-    showToast('日志已复制');
+    try {
+      await copyText(state.logs.join('\n'));
+      showToast('日志已复制');
+    } catch (error) {
+      showToast(error.message);
+    }
   });
 
   els.searchInput.addEventListener('input', renderAccounts);

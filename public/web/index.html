@@ -69,15 +69,14 @@
           </label>
 
           <div class="panel-head compact">
-            <h2>手动重登</h2>
-            <span>登录 ChatGPT 后导入 SUB2API</span>
+            <h2>OpenAI 授权</h2>
+            <span>生成链接后用无痕窗口登录</span>
           </div>
           <div class="relogin-box">
             <label>
-              <span>登录代理</span>
+              <span>SUB2API 代理绑定</span>
               <select id="reloginProxyMode">
                 <option value="none">直连 / 无代理</option>
-                <option value="sub2api">使用 SUB2API 配置代理</option>
                 <option value="custom">手填代理</option>
               </select>
             </label>
@@ -86,7 +85,17 @@
               <input id="proxyUsername" type="text" placeholder="代理用户名，可留空">
               <input id="proxyPassword" type="password" placeholder="代理密码，可留空">
             </div>
-            <button id="reloginSelectedBtn" class="primary">重登选中并导入</button>
+            <button id="reloginSelectedBtn" class="primary">生成授权链接</button>
+            <label>
+              <span>授权链接</span>
+              <textarea id="authUrlText" readonly spellcheck="false" placeholder="选择一个邮箱后点击生成授权链接"></textarea>
+            </label>
+            <button id="copyAuthUrlBtn">复制授权链接</button>
+            <label>
+              <span>回调地址</span>
+              <textarea id="callbackUrlText" spellcheck="false" placeholder="登录完成后，把地址栏里 http://localhost... 开头的完整网址粘贴到这里"></textarea>
+            </label>
+            <button id="completeAuthBtn" class="primary">完成授权并写入 SUB2API</button>
             <p id="reloginResult" class="hint"></p>
           </div>
         </aside>

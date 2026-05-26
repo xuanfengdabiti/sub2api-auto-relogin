@@ -86,7 +86,6 @@ async function loadConfig() {
   if (!config.email) missing.push('SUB2API_EMAIL');
   if (!config.password) missing.push('SUB2API_PASSWORD');
   if (!config.groupNames.length) missing.push('SUB2API_GROUP_NAMES');
-  if (!config.proxyName) missing.push('SUB2API_PROXY_NAME');
   if (missing.length) {
     throw new Error(`Missing config: ${missing.join(', ')}. Fill ${ENV_PATH}.`);
   }
@@ -231,6 +230,27 @@ async function listProxies(origin, token) {
   return [];
 }
 
+async function listAllProxies(origin, token) {
+  const pageSize = 1000;
+  const all = [];
+  let pages = 1;
+
+  for (let page = 1; page <= pages; page += 1) {
+    const params = new URLSearchParams({
+      page: String(page),
+      page_size: String(pageSize),
+      sort_by: 'name',
+      sort_order: 'asc',
+    });
+    const payload = await requestJson(origin, `/api/v1/admin/proxies?${params}`, { token });
+    const extracted = extractItems(payload);
+    all.push(...extracted.items);
+    pages = extracted.pages;
+  }
+
+  return all;
+}
+
 async function resolveGroupIds(origin, token, groupNames = [], platform = '') {
   const groups = await listGroups(origin, token, platform);
   const targets = normalizeCsvList(groupNames).map((name) => name.toLowerCase());
@@ -249,7 +269,7 @@ async function resolveGroupIds(origin, token, groupNames = [], platform = '') {
 async function resolveProxy(origin, token, proxyName = '') {
   const proxies = await listProxies(origin, token);
   const target = String(proxyName || '').trim().toLowerCase();
-  if (!target && proxies.length === 1) return proxies[0];
+  if (!target) return null;
   const proxy = proxies.find((item) => (
     String(item?.name || '').trim().toLowerCase() === target
     || String(item?.proxy_key || item?.proxyKey || '').trim().toLowerCase() === target
@@ -260,14 +280,63 @@ async function resolveProxy(origin, token, proxyName = '') {
   return proxy || null;
 }
 
+async function createProxy(origin, token, payload) {
+  return requestJson(origin, '/api/v1/admin/proxies', {
+    method: 'POST',
+    token,
+    body: payload,
+  });
+}
+
+async function updateProxy(origin, token, proxyId, payload) {
+  return requestJson(origin, `/api/v1/admin/proxies/${encodeURIComponent(proxyId)}`, {
+    method: 'PUT',
+    token,
+    body: payload,
+  });
+}
+
 async function getAccount(origin, token, accountId) {
   return requestJson(origin, `/api/v1/admin/accounts/${encodeURIComponent(accountId)}`, { token });
+}
+
+async function createAccount(origin, token, payload) {
+  return requestJson(origin, '/api/v1/admin/accounts', {
+    method: 'POST',
+    token,
+    body: payload,
+  });
+}
+
+async function updateAccount(origin, token, accountId, payload) {
+  return requestJson(origin, `/api/v1/admin/accounts/${encodeURIComponent(accountId)}`, {
+    method: 'PUT',
+    token,
+    body: payload,
+  });
 }
 
 async function deleteAccount(origin, token, accountId) {
   return requestJson(origin, `/api/v1/admin/accounts/${encodeURIComponent(accountId)}`, {
     method: 'DELETE',
     token,
+  });
+}
+
+async function generateOpenAiAuthUrl(origin, token, payload = {}) {
+  return requestJson(origin, '/api/v1/admin/openai/generate-auth-url', {
+    method: 'POST',
+    token,
+    body: payload,
+  });
+}
+
+async function exchangeOpenAiCode(origin, token, payload = {}) {
+  return requestJson(origin, '/api/v1/admin/openai/exchange-code', {
+    method: 'POST',
+    token,
+    body: payload,
+    timeoutMs: 120000,
   });
 }
 
@@ -631,14 +700,19 @@ module.exports = {
   appendLog,
   checkOnce,
   cleanupDuplicateFailedAccounts,
+  createAccount,
+  createProxy,
   deleteAccount,
   deleteSub2apiAccountsByEmail,
+  exchangeOpenAiCode,
   formatSummary,
+  generateOpenAiAuthUrl,
   getAccount,
   getOrigin,
   importAccountData,
   importCodexSession,
   isPidAlive,
+  listAllProxies,
   listFailedAccounts,
   listAccountsByName,
   listGroups,
@@ -656,6 +730,8 @@ module.exports = {
   resolveProxy,
   setAutoCheckEnabled,
   stopLockedProcess,
+  updateAccount,
+  updateProxy,
   writeControl,
   accountMatchesGroups,
   extractAccountGroupNames,

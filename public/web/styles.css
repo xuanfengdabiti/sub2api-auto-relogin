@@ -268,15 +268,27 @@ h2 {
 }
 
 .relogin-box select,
-.relogin-box input {
+.relogin-box input,
+.relogin-box textarea {
   width: 100%;
-  min-height: 38px;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: #fffaf0;
   color: var(--ink);
-  padding: 0 11px;
   outline: none;
+}
+
+.relogin-box select,
+.relogin-box input {
+  min-height: 38px;
+  padding: 0 11px;
+}
+
+.relogin-box textarea {
+  min-height: 74px;
+  resize: vertical;
+  padding: 9px 11px;
+  line-height: 1.45;
 }
 
 .hidden {

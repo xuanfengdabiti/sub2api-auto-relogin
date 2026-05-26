@@ -87,17 +87,19 @@ function proxyForExport(proxy) {
   });
 }
 
-async function resolveSub2apiTargets(config) {
+async function resolveSub2apiTargets(config, options = {}) {
+  const proxyName = options.proxyName !== undefined ? options.proxyName : config.proxyName;
   const { origin, token } = await monitor.login(config);
   const [groupIds, proxy] = await Promise.all([
     monitor.resolveGroupIds(origin, token, config.groupNames, config.platform),
-    monitor.resolveProxy(origin, token, config.proxyName),
+    monitor.resolveProxy(origin, token, proxyName),
   ]);
   return {
     origin,
     token,
     groupIds,
     proxy,
+    proxyName,
     exportProxy: proxyForExport(proxy),
   };
 }
@@ -107,7 +109,9 @@ async function convertSessionFile(inputPath, options = {}) {
   const session = ensureSessionShape(await readJson(inputPath), {
     email: options.email,
   });
-  const targets = await resolveSub2apiTargets(config);
+  const targets = await resolveSub2apiTargets(config, {
+    proxyName: options.sub2apiProxyName,
+  });
   const result = converter.convertSessionsToSub2api([session], {
     groupName: config.groupNames[0],
     proxy: targets.exportProxy,
@@ -144,12 +148,11 @@ async function importSessionFile(inputPath, options = {}) {
   const session = ensureSessionShape(await readJson(inputPath), {
     email: options.email,
   });
-  const targets = await resolveSub2apiTargets(config);
+  const targets = await resolveSub2apiTargets(config, {
+    proxyName: options.sub2apiProxyName,
+  });
   if (!targets.groupIds.length) {
     throw new Error(`No SUB2API group ids resolved for ${config.groupNames.join(', ')}`);
-  }
-  if (!targets.proxy?.id) {
-    throw new Error(`No SUB2API proxy id resolved for ${config.proxyName || '(default)'}`);
   }
 
   const content = extractCodexSessionContent(session);
@@ -157,11 +160,10 @@ async function importSessionFile(inputPath, options = {}) {
     import_source: 'codex_auto_relogin',
     imported_at: new Date().toISOString(),
   };
-  const response = await monitor.importCodexSession(targets.origin, targets.token, {
+  const payload = {
     content,
     name: options.name || session.user?.email || session.email || '',
     notes: options.notes || null,
-    proxy_id: Number(targets.proxy.id),
     concurrency: config.concurrency,
     priority: config.priority,
     rate_multiplier: config.rateMultiplier,
@@ -169,7 +171,11 @@ async function importSessionFile(inputPath, options = {}) {
     auto_pause_on_expired: true,
     extra,
     update_existing: true,
-  });
+  };
+  if (targets.proxy?.id) {
+    payload.proxy_id = Number(targets.proxy.id);
+  }
+  const response = await monitor.importCodexSession(targets.origin, targets.token, payload);
   const accountName = options.name || session.user?.email || session.email || '';
   const postImport = await recoverImportedAccounts(targets.origin, targets.token, response, {
     accountName,
@@ -183,8 +189,8 @@ async function importSessionFile(inputPath, options = {}) {
     target: {
       groupIds: targets.groupIds,
       groupNames: config.groupNames,
-      proxyId: Number(targets.proxy.id),
-      proxyName: targets.proxy.name || config.proxyName,
+      proxyId: targets.proxy?.id ? Number(targets.proxy.id) : null,
+      proxyName: targets.proxy?.name || targets.proxyName || '',
       concurrency: config.concurrency,
     },
   };
@@ -251,7 +257,9 @@ function extractImportedAccountIds(response) {
 async function importConvertedDocument(inputPath, options = {}) {
   const config = await monitor.loadConfig();
   const document = await readJson(inputPath);
-  const targets = await resolveSub2apiTargets(config);
+  const targets = await resolveSub2apiTargets(config, {
+    proxyName: options.sub2apiProxyName,
+  });
   const patched = converter.applySub2apiDefaults(document, {
     groupName: config.groupNames[0],
     proxy: targets.exportProxy,
