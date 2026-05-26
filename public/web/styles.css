@@ -32,6 +32,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -225,6 +226,8 @@ h2 {
 }
 
 .import-panel textarea:focus,
+.relogin-box input:focus,
+.relogin-box select:focus,
 .table-tools input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(36, 107, 94, 0.15);
@@ -246,6 +249,38 @@ h2 {
   margin-top: 12px;
   color: var(--muted);
   font-size: 13px;
+}
+
+.relogin-box {
+  display: grid;
+  gap: 10px;
+}
+
+.relogin-box label,
+.proxy-fields {
+  display: grid;
+  gap: 7px;
+}
+
+.relogin-box label span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.relogin-box select,
+.relogin-box input {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fffaf0;
+  color: var(--ink);
+  padding: 0 11px;
+  outline: none;
+}
+
+.hidden {
+  display: none !important;
 }
 
 .table-tools {

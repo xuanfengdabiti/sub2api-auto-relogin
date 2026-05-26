@@ -67,6 +67,28 @@
             <input id="deleteSub2api" type="checkbox">
             <span>删除时同时删除 SUB2API 账号</span>
           </label>
+
+          <div class="panel-head compact">
+            <h2>手动重登</h2>
+            <span>登录 ChatGPT 后导入 SUB2API</span>
+          </div>
+          <div class="relogin-box">
+            <label>
+              <span>登录代理</span>
+              <select id="reloginProxyMode">
+                <option value="none">直连 / 无代理</option>
+                <option value="sub2api">使用 SUB2API 配置代理</option>
+                <option value="custom">手填代理</option>
+              </select>
+            </label>
+            <div id="customProxyFields" class="proxy-fields hidden">
+              <input id="proxyServer" type="text" placeholder="http://host:port 或 socks5://host:port">
+              <input id="proxyUsername" type="text" placeholder="代理用户名，可留空">
+              <input id="proxyPassword" type="password" placeholder="代理密码，可留空">
+            </div>
+            <button id="reloginSelectedBtn" class="primary">重登选中并导入</button>
+            <p id="reloginResult" class="hint"></p>
+          </div>
         </aside>
 
         <section class="panel table-panel">

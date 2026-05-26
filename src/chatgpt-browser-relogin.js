@@ -237,16 +237,32 @@ function proxyToPlaywright(proxy) {
 }
 
 async function resolveBrowserProxy(options = {}) {
-  if (options.proxy === false || process.env.CHATGPT_RELOGIN_PROXY === 'none') return null;
-  if (options.proxy && typeof options.proxy === 'object') return proxyToPlaywright(options.proxy);
+  if (options.proxy === false) return null;
+  if (options.proxy && typeof options.proxy === 'object') {
+    if (options.proxy.server) {
+      return {
+        server: String(options.proxy.server),
+        ...(options.proxy.username ? { username: String(options.proxy.username) } : {}),
+        ...(options.proxy.password ? { password: String(options.proxy.password) } : {}),
+      };
+    }
+    return proxyToPlaywright(options.proxy);
+  }
+  if (options.useSub2apiProxy === true) {
+    const config = await monitor.loadConfig();
+    const { origin, token } = await monitor.login(config);
+    return proxyToPlaywright(await monitor.resolveProxy(origin, token, config.proxyName));
+  }
   const explicit = String(options.proxyServer || process.env.CHATGPT_RELOGIN_PROXY || '').trim();
+  if (explicit === 'none') return null;
   if (explicit) {
     return {
       server: explicit,
-      ...(process.env.CHATGPT_RELOGIN_PROXY_USERNAME ? { username: process.env.CHATGPT_RELOGIN_PROXY_USERNAME } : {}),
-      ...(process.env.CHATGPT_RELOGIN_PROXY_PASSWORD ? { password: process.env.CHATGPT_RELOGIN_PROXY_PASSWORD } : {}),
+      ...(options.proxyUsername || process.env.CHATGPT_RELOGIN_PROXY_USERNAME ? { username: String(options.proxyUsername || process.env.CHATGPT_RELOGIN_PROXY_USERNAME) } : {}),
+      ...(options.proxyPassword || process.env.CHATGPT_RELOGIN_PROXY_PASSWORD ? { password: String(options.proxyPassword || process.env.CHATGPT_RELOGIN_PROXY_PASSWORD) } : {}),
     };
   }
+  if (process.env.CHATGPT_RELOGIN_PROXY === 'none') return null;
   if (process.env.CHATGPT_RELOGIN_USE_SUB2API_PROXY === '0') return null;
   try {
     const config = await monitor.loadConfig();

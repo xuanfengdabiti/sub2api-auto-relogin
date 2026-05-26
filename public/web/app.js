@@ -19,6 +19,12 @@ const els = {
   selectedCount: $('#selectedCount'),
   importText: $('#importText'),
   importResult: $('#importResult'),
+  reloginProxyMode: $('#reloginProxyMode'),
+  customProxyFields: $('#customProxyFields'),
+  proxyServer: $('#proxyServer'),
+  proxyUsername: $('#proxyUsername'),
+  proxyPassword: $('#proxyPassword'),
+  reloginResult: $('#reloginResult'),
   searchInput: $('#searchInput'),
   selectAll: $('#selectAll'),
   logsBox: $('#logsBox'),
@@ -258,6 +264,47 @@ async function copyLatestCode(account) {
   });
 }
 
+function reloginProxyPayload() {
+  const proxyMode = els.reloginProxyMode.value;
+  const payload = { proxyMode };
+  if (proxyMode === 'custom') {
+    payload.proxyServer = els.proxyServer.value.trim();
+    payload.proxyUsername = els.proxyUsername.value.trim();
+    payload.proxyPassword = els.proxyPassword.value;
+    if (!payload.proxyServer) throw new Error('先填写代理地址');
+  }
+  return payload;
+}
+
+async function reloginEmails(emails) {
+  if (!emails.length) {
+    showToast('没有可重登的邮箱');
+    return;
+  }
+  let payload;
+  try {
+    payload = reloginProxyPayload();
+  } catch (error) {
+    showToast(error.message);
+    return;
+  }
+  const proxyLabel = els.reloginProxyMode.options[els.reloginProxyMode.selectedIndex]?.textContent || '';
+  const message = `确认重登 ${emails.length} 个邮箱并导入 SUB2API？\n登录代理：${proxyLabel}`;
+  if (!window.confirm(message)) return;
+  await runAction('正在重登并导入', async () => {
+    const result = await api('/api/relogin/import', {
+      method: 'POST',
+      body: {
+        emails,
+        ...payload,
+      },
+    });
+    const failed = result.results.filter((item) => !item.ok);
+    els.reloginResult.textContent = `完成 ${result.successCount}/${result.reloginCount} 个${failed.length ? `，失败：${failed.map((item) => item.email).join(', ')}` : ''}`;
+    showToast(failed.length ? `重登完成，有 ${failed.length} 个失败` : '重登并导入完成');
+  });
+}
+
 async function toggleAutoCheck() {
   const nextEnabled = !state.autoCheckEnabled;
   await runAction(nextEnabled ? '正在开启自动检测' : '正在暂停自动检测', async () => {
@@ -293,6 +340,11 @@ function bindEvents() {
   $('#checkAllBtn').addEventListener('click', () => checkEmails(state.accounts.map((account) => account.email)));
   $('#deleteSelectedBtn').addEventListener('click', () => deleteEmails(selectedEmails()));
   $('#deleteAllBtn').addEventListener('click', () => deleteEmails(state.accounts.map((account) => account.email)));
+  $('#reloginSelectedBtn').addEventListener('click', () => reloginEmails(selectedEmails()));
+
+  els.reloginProxyMode.addEventListener('change', () => {
+    els.customProxyFields.classList.toggle('hidden', els.reloginProxyMode.value !== 'custom');
+  });
 
   $('#copyLogsBtn').addEventListener('click', async () => {
     await navigator.clipboard.writeText(state.logs.join('\n'));

@@ -185,6 +185,34 @@ function resolveRequestedEmails(body, options = {}) {
   return accountStore.loadAccounts().map((account) => account.email).filter(Boolean);
 }
 
+function resolveReloginOptions(body = {}) {
+  const mode = String(body.proxyMode || 'none').trim();
+  const options = {
+    headless: true,
+  };
+
+  if (mode === 'none') {
+    options.proxy = false;
+    return { options, proxyMode: mode, proxyLabel: 'direct' };
+  }
+
+  if (mode === 'sub2api') {
+    options.useSub2apiProxy = true;
+    return { options, proxyMode: mode, proxyLabel: 'sub2api-config' };
+  }
+
+  if (mode === 'custom') {
+    const server = String(body.proxyServer || '').trim();
+    if (!server) throw new Error('Missing custom proxy server.');
+    options.proxyServer = server;
+    options.proxyUsername = String(body.proxyUsername || '').trim();
+    options.proxyPassword = String(body.proxyPassword || '');
+    return { options, proxyMode: mode, proxyLabel: server.replace(/\/\/([^:@/]+):([^@/]+)@/u, '//***:***@') };
+  }
+
+  throw new Error('Invalid proxy mode.');
+}
+
 async function handleApi(req, res, url) {
   if (req.method === 'GET' && url.pathname === '/api/status') {
     sendJson(res, 200, await getStatusPayload());
@@ -275,6 +303,51 @@ async function handleApi(req, res, url) {
     sendJson(res, 200, {
       ok: true,
       deleted: results,
+      accounts: accountStore.loadAccounts().map(webAccount),
+    });
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/relogin/import') {
+    const body = await parseJsonBody(req);
+    const emails = resolveRequestedEmails(body, { allowAll: false });
+    if (!emails.length) throw new Error('No mailboxes selected for relogin.');
+    const { options, proxyMode, proxyLabel } = resolveReloginOptions(body);
+    const results = [];
+
+    for (const email of emails) {
+      await monitor.appendEventLog(`WEB relogin START ${email}: proxy=${proxyLabel}`);
+      try {
+        const result = await browserRelogin.reloginImport(email, options);
+        results.push({
+          ok: Boolean(result.ok),
+          email,
+          proxyMode,
+          proxyServer: result.capture?.proxyServer || '',
+          loginAttempts: result.capture?.loginAttempts || 0,
+          sessionPath: result.capture?.sessionPath || '',
+          codeReceivedAt: result.capture?.codeReceivedAt || '',
+          deletedBeforeImport: result.preImportCleanup?.count || 0,
+          import: result.import,
+        });
+        await monitor.appendEventLog(`WEB relogin OK ${email}: proxy=${result.capture?.proxyServer || 'direct'} created=${result.import?.created || 0} updated=${result.import?.updated || 0}`);
+      } catch (error) {
+        results.push({
+          ok: false,
+          email,
+          proxyMode,
+          error: error.message || String(error),
+          cleanup: error.cleanup || null,
+        });
+        await monitor.appendEventLog(`WEB relogin FAIL ${email}: ${error.message || error}`);
+      }
+    }
+
+    sendJson(res, 200, {
+      ok: results.every((result) => result.ok),
+      reloginCount: results.length,
+      successCount: results.filter((result) => result.ok).length,
+      results,
       accounts: accountStore.loadAccounts().map(webAccount),
     });
     return;
