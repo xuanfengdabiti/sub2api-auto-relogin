@@ -99,10 +99,22 @@ function formatTime(value) {
   return new Date(time).toLocaleString('zh-CN', { hour12: false });
 }
 
+function formatDate(value) {
+  if (!value) return '';
+  const time = Date.parse(value);
+  if (!time) return String(value).slice(0, 10);
+  return new Date(time).toLocaleDateString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).replaceAll('/', '-');
+}
+
 function statusText(status) {
   if (status === 'authorized') return '正常';
   if (status === 'error') return '异常';
   if (status === 'pending') return '待检测';
+  if (status === 'gpt_banned') return 'GPT 封禁';
   return status || '未知';
 }
 
@@ -121,8 +133,12 @@ function filteredAccounts() {
   return state.accounts.filter((account) => [
     account.email,
     account.status,
+    account.mailStatus,
+    account.gptStatus,
+    account.gptBannedAt,
     account.source,
     account.lastError,
+    account.gptBannedReason,
   ].some((value) => String(value || '').toLowerCase().includes(query)));
 }
 
@@ -148,8 +164,14 @@ function renderAccounts() {
     return;
   }
 
-  els.accountsBody.innerHTML = accounts.map((account) => `
-    <tr>
+  els.accountsBody.innerHTML = accounts.map((account) => {
+    const bannedDate = account.status === 'gpt_banned' ? formatDate(account.gptBannedAt) : '';
+    const statusLabel = bannedDate ? `${statusText(account.status)} ${bannedDate}` : statusText(account.status);
+    const errorText = account.status === 'gpt_banned'
+      ? (account.gptBannedReason || account.lastError || 'ChatGPT 账号封禁，邮箱保留')
+      : (account.lastError || '-');
+    return `
+    <tr class="${account.status === 'gpt_banned' ? 'row-banned' : ''}">
       <td class="select-col">
         <input class="row-check" type="checkbox" data-id="${escapeHtml(account.id)}" ${state.selected.has(account.id) ? 'checked' : ''}>
       </td>
@@ -157,9 +179,9 @@ function renderAccounts() {
         <div class="email-cell">${escapeHtml(account.email)}</div>
         <div class="hint">${account.hasPassword ? 'password' : 'no password'} / ${account.hasClientId ? 'clientId' : 'no clientId'} / ${account.hasRefreshToken ? 'token' : 'no token'}</div>
       </td>
-      <td><span class="status ${escapeHtml(account.status)}">${escapeHtml(statusText(account.status))}</span></td>
+      <td><span class="status ${escapeHtml(account.status)}">${escapeHtml(statusLabel)}</span></td>
       <td class="mono">${escapeHtml(formatTime(account.lastAuthAt))}</td>
-      <td><div class="error-text" title="${escapeHtml(account.lastError || '')}">${escapeHtml(account.lastError || '-')}</div></td>
+      <td><div class="error-text" title="${escapeHtml(errorText)}">${escapeHtml(errorText)}</div></td>
       <td>
         <div class="actions">
           <button data-action="check" data-id="${escapeHtml(account.id)}">检测</button>
@@ -168,7 +190,8 @@ function renderAccounts() {
         </div>
       </td>
     </tr>
-  `).join('');
+  `;
+  }).join('');
   updateSelectionLabel();
 }
 

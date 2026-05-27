@@ -259,27 +259,33 @@ async function reloginFailedAccounts(accounts, options = {}) {
     const key = email.toLowerCase();
     if (!email || seen.has(key)) continue;
     seen.add(key);
-    if (!findAccount(email)) {
-      const cleanup = await monitor.deleteSub2apiAccountsByEmail(email, {
-        onlyError: true,
-      }).catch((error) => ({
-        count: 0,
-        deleted: [],
-        error: error.message || String(error),
-      }));
+    const localAccount = findAccount(email);
+    if (browserRelogin.isDeletedOrDeactivatedAccountText(account.errorMessage || '')) {
+      const banned = localAccount
+        ? await browserRelogin.markChatGptBanned(email, account.errorMessage || 'sub2api_account_deleted_or_deactivated')
+        : null;
+      results.push({
+        ok: false,
+        account,
+        email,
+        skipped: true,
+        error: 'ChatGPT account is banned/deactivated; kept without deletion.',
+        cleanup: null,
+        banned,
+      });
+      await monitor.appendEventLog(`AUTO-RELOGIN BANNED ${email}: ${banned?.gptBannedAt || ''} ${account.errorMessage || ''}`);
+      continue;
+    }
+    if (!localAccount) {
       results.push({
         ok: false,
         account,
         email,
         skipped: true,
         error: `Hotmail account not found locally: ${email}`,
-        cleanup: {
-          mailDeleted: 0,
-          sub2apiDeleted: cleanup.count || 0,
-          sub2apiError: cleanup.error || '',
-        },
+        cleanup: null,
       });
-      await monitor.appendEventLog(`AUTO-RELOGIN CLEANUP ${email}: missing local mailbox, sub2api=${cleanup.count || 0}${cleanup.error ? ` sub2apiError=${cleanup.error}` : ''}`);
+      await monitor.appendEventLog(`AUTO-RELOGIN SKIP ${email}: missing local mailbox; no deletion performed`);
       continue;
     }
     try {
@@ -304,8 +310,11 @@ async function reloginFailedAccounts(accounts, options = {}) {
         email,
         error: summarizeError(error),
         cleanup: error.cleanup || null,
+        banned: error.banned || null,
       });
-      if (error.cleanup) {
+      if (error.banned) {
+        await monitor.appendEventLog(`AUTO-RELOGIN BANNED ${email}: ${error.banned.gptBannedAt || ''} ${summarizeError(error)}`);
+      } else if (error.cleanup) {
         await monitor.appendEventLog(`AUTO-RELOGIN CLEANUP ${email}: ${summarizeError(error)} mail=${error.cleanup.mailDeleted || 0} sub2api=${error.cleanup.sub2apiDeleted || 0}`);
       } else {
         await monitor.appendEventLog(`AUTO-RELOGIN FAIL ${email}: ${summarizeError(error)}`);

@@ -25,7 +25,11 @@ function webAccount(account) {
   return {
     id: account.id,
     email: account.email,
-    status: account.status,
+    status: account.gptStatus === 'banned' ? 'gpt_banned' : account.status,
+    mailStatus: account.status,
+    gptStatus: account.gptStatus || '',
+    gptBannedAt: account.gptBannedAt || '',
+    gptBannedReason: account.gptBannedReason || '',
     used: Boolean(account.used),
     hasPassword: Boolean(account.password),
     hasClientId: Boolean(account.clientId),
@@ -616,6 +620,7 @@ async function handleApi(req, res, url) {
           proxyMode,
           error: error.message || String(error),
           cleanup: error.cleanup || null,
+          banned: error.banned || null,
         });
         await monitor.appendEventLog(`WEB relogin FAIL ${email}: ${error.message || error}`);
       }

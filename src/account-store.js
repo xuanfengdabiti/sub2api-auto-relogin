@@ -50,6 +50,9 @@ function normalizeAccount(raw = {}) {
     lastAuthAt: Number(raw.lastAuthAt || 0) || 0,
     lastUsedAt: Number(raw.lastUsedAt || 0) || 0,
     lastError: String(raw.lastError || ''),
+    gptStatus: normalizeString(raw.gptStatus),
+    gptBannedAt: normalizeString(raw.gptBannedAt),
+    gptBannedReason: String(raw.gptBannedReason || ''),
     source: normalizeString(raw.source) || 'local',
   };
 }
@@ -396,6 +399,9 @@ function summarizeAccount(account) {
     lastAuthAt: account.lastAuthAt,
     lastUsedAt: account.lastUsedAt,
     lastError: account.lastError ? String(account.lastError).slice(0, 200) : '',
+    gptStatus: account.gptStatus,
+    gptBannedAt: account.gptBannedAt,
+    gptBannedReason: account.gptBannedReason ? String(account.gptBannedReason).slice(0, 200) : '',
     source: account.source,
   };
 }

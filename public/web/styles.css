@@ -381,10 +381,20 @@ tr:last-child td {
   border-color: #e7b7b1;
 }
 
+.status.gpt_banned {
+  color: #7c271f;
+  background: #fde7da;
+  border-color: #e7aa95;
+}
+
 .status.pending {
   color: var(--warn);
   background: #f8eddf;
   border-color: #e8d0ab;
+}
+
+.row-banned {
+  background: #fff4ee;
 }
 
 .error-text {

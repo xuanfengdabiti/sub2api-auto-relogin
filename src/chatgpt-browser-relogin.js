@@ -158,6 +158,34 @@ async function cleanupDeadMailbox(email, reason = '') {
   };
 }
 
+function beijingDateString(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const get = (type) => parts.find((part) => part.type === type)?.value || '00';
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
+async function markChatGptBanned(email, reason = '') {
+  const account = accountStore.updateAccount(email, {
+    gptStatus: 'banned',
+    gptBannedAt: beijingDateString(),
+    gptBannedReason: reason,
+    lastError: reason || 'ChatGPT account is deleted/deactivated.',
+  });
+  await monitor.appendEventLog(`GPT-BANNED ${email}: ${reason || 'chatgpt_account_deleted_or_deactivated'}`);
+  return {
+    email,
+    account,
+    gptStatus: account.gptStatus,
+    gptBannedAt: account.gptBannedAt,
+    gptBannedReason: account.gptBannedReason,
+  };
+}
+
 function isDeletedOrDeactivatedAccountText(text) {
   const message = String(text || '').toLowerCase();
   return [
@@ -532,11 +560,11 @@ async function submitEmailWithRetries(page, email, options = {}) {
         dump,
       };
       if (await detectDeletedOrDeactivatedAccount(page, dump)) {
-        const cleanup = await cleanupDeadMailbox(email, 'chatgpt_account_deleted_or_deactivated');
-        const cleanupError = new Error('ChatGPT account is deleted/deactivated and was cleaned up.');
-        cleanupError.cleanup = cleanup;
-        cleanupError.permanent = true;
-        throw cleanupError;
+        const banned = await markChatGptBanned(email, 'chatgpt_account_deleted_or_deactivated');
+        const bannedError = new Error('ChatGPT account is deleted/deactivated; marked as banned and kept.');
+        bannedError.banned = banned;
+        bannedError.permanent = true;
+        throw bannedError;
       }
       continue;
     }
@@ -545,9 +573,9 @@ async function submitEmailWithRetries(page, email, options = {}) {
       debugDir: options.debugDir,
     });
     if (await detectDeletedOrDeactivatedAccount(page, dump)) {
-      const cleanup = await cleanupDeadMailbox(email, 'chatgpt_account_deleted_or_deactivated');
-      const error = new Error('ChatGPT account is deleted/deactivated and was cleaned up.');
-      error.cleanup = cleanup;
+      const banned = await markChatGptBanned(email, 'chatgpt_account_deleted_or_deactivated');
+      const error = new Error('ChatGPT account is deleted/deactivated; marked as banned and kept.');
+      error.banned = banned;
       error.permanent = true;
       throw error;
     }
@@ -736,9 +764,9 @@ async function reloginAndCaptureSession(email, options = {}) {
         throw postCodeAuthError;
       }
       if (await detectDeletedOrDeactivatedAccount(page, afterCodeDump)) {
-        const cleanup = await cleanupDeadMailbox(email, 'chatgpt_account_deleted_or_deactivated');
-        const error = new Error('ChatGPT account is deleted/deactivated and was cleaned up.');
-        error.cleanup = cleanup;
+        const banned = await markChatGptBanned(email, 'chatgpt_account_deleted_or_deactivated');
+        const error = new Error('ChatGPT account is deleted/deactivated; marked as banned and kept.');
+        error.banned = banned;
         error.permanent = true;
         throw error;
       }
@@ -803,6 +831,7 @@ module.exports = {
   findChromeExecutable,
   isDeletedOrDeactivatedAccountText,
   isMailboxDeadError,
+  markChatGptBanned,
   reloginAndCaptureSession,
   reloginImport,
 };
